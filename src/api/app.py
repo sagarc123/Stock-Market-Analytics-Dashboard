@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # --- CONFIGURATION ---
 logging.basicConfig(level=logging.INFO)
 
-# CORRECTED PATH: Database is in ../data/stock_data.db relative to api.py
+# Database configuration - try multiple possible locations
 DB_FILENAME = "stock_data.db"
 TABLE_NAME = "stock_data"
 
@@ -38,23 +38,39 @@ def load_data():
     """Loads and preprocesses the stock data from SQLite database into memory."""
     global df_stock, data_loaded
 
-    # Get the absolute path to the database file
+    # Try multiple possible database locations
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(current_dir, DB_FILENAME)
+    possible_paths = [
+        os.path.join(current_dir, DB_FILENAME),  # Same directory
+        os.path.join(current_dir, "data", DB_FILENAME),  # ./data/ directory
+        os.path.join(current_dir, "..", "data", DB_FILENAME),  # ../data/ directory
+        os.path.join(os.getcwd(), "data", DB_FILENAME),  # ./data/ from working dir
+        os.path.join(os.getcwd(), DB_FILENAME),  # Same as working directory
+    ]
 
-    logging.info(f"Looking for database at: {db_path}")
-    logging.info(f"Current working directory: {os.getcwd()}")
+    db_path_found = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            db_path_found = path
+            break
 
-    if not os.path.exists(db_path):
-        logging.error(f"❌ Database file not found at: {db_path}")
-        logging.error("Please ensure the database file exists in the data/ directory")
+    if not db_path_found:
+        logging.error("❌ Database file not found at any of these locations:")
+        for path in possible_paths:
+            logging.error(f"   - {path}")
+        logging.error(
+            "Please ensure the database file exists in one of these locations"
+        )
         df_stock = pd.DataFrame()
         data_loaded = False
         return
 
+    logging.info(f"✅ Found database at: {db_path_found}")
+    logging.info(f"📁 Current working directory: {os.getcwd()}")
+
     try:
         # Connect and read table
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(db_path_found) as conn:
             # First, check if table exists
             cursor = conn.cursor()
             cursor.execute(
@@ -175,17 +191,35 @@ def get_mode_trend(group):
 def root():
     """Root endpoint with API information."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(current_dir, DB_FILENAME)
+
+    # Check multiple possible database locations
+    possible_paths = [
+        os.path.join(current_dir, DB_FILENAME),
+        os.path.join(current_dir, "data", DB_FILENAME),
+        os.path.join(current_dir, "..", "data", DB_FILENAME),
+        os.path.join(os.getcwd(), "data", DB_FILENAME),
+    ]
+
+    db_exists = False
+    db_location = "Not found"
+    for path in possible_paths:
+        if os.path.exists(path):
+            db_exists = True
+            db_location = path
+            break
 
     return {
         "message": "Stock Data Analysis API",
         "status": "running",
         "data_loaded": data_loaded,
         "data_rows": len(df_stock) if data_loaded else 0,
-        "database_path": db_path,
-        "database_exists": os.path.exists(db_path),
+        "database_exists": db_exists,
+        "database_location": db_location,
+        "port": int(os.environ.get("PORT", 8000)),
+        "environment": os.environ.get("RENDER", "local"),
         "endpoints": {
             "/health": "Health check",
+            "/port-info": "Port binding information",
             "/metrics/sector_summary": "Sector summary data",
             "/data/daily_prices": "Aggregated daily prices",
         },
@@ -196,14 +230,58 @@ def root():
 def health():
     """Health check endpoint."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(current_dir, DB_FILENAME)
+
+    # Check multiple possible database locations
+    possible_paths = [
+        os.path.join(current_dir, DB_FILENAME),
+        os.path.join(current_dir, "data", DB_FILENAME),
+        os.path.join(current_dir, "..", "data", DB_FILENAME),
+        os.path.join(os.getcwd(), "data", DB_FILENAME),
+    ]
+
+    db_exists = False
+    db_location = "Not found"
+    for path in possible_paths:
+        if os.path.exists(path):
+            db_exists = True
+            db_location = path
+            break
 
     return {
-        "status": "ok",
+        "status": "ok" if data_loaded else "degraded",
         "data_loaded": data_loaded,
         "data_rows": len(df_stock) if data_loaded else 0,
-        "database_path": db_path,
-        "database_exists": os.path.exists(db_path),
+        "database_exists": db_exists,
+        "database_location": db_location,
+        "port": int(os.environ.get("PORT", 8000)),
+    }
+
+
+@app.get("/port-info")
+def port_info():
+    """Debug endpoint to check port binding."""
+    import socket
+
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", 8000))
+
+    # Test port availability
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+        port_status = "Available"
+    except OSError as e:
+        port_status = f"Unavailable: {e}"
+
+    return {
+        "host": host,
+        "port": port,
+        "port_status": port_status,
+        "environment_PORT": os.environ.get("PORT", "Not set (using default 8000)"),
+        "current_working_directory": os.getcwd(),
+        "python_files": [f for f in os.listdir(".") if f.endswith(".py")],
+        "all_files": os.listdir("."),
     }
 
 
@@ -323,17 +401,36 @@ def get_aggregated_prices(period: str, limit: int = 500):
 if __name__ == "__main__":
     import uvicorn
 
+    # Get port from environment variable (for platforms like Render, Heroku, etc.)
+    port = int(os.environ.get("PORT", 8000))
+    host = "0.0.0.0"  # Bind to all interfaces for deployment
+
     print("=" * 50)
-    print("Starting Stock Data Analysis API...")
+    print("🚀 Starting Stock Data Analysis API...")
     print("=" * 50)
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(current_dir, DB_FILENAME)
 
     print(f"📁 API Location: {current_dir}")
-    print(f"📊 Database Path: {db_path}")
-    print(f"📋 Database Exists: {os.path.exists(db_path)}")
-    print(f"🔍 Table Name: {TABLE_NAME}")
+    print(f"📁 Current Working Directory: {os.getcwd()}")
+    print(f"🔍 Database File: {DB_FILENAME}")
+    print(f"📋 Table Name: {TABLE_NAME}")
+    print(f"🌐 Host: {host}")
+    print(f"🚪 Port: {port}")
+    print(f"🔧 Environment PORT: {os.environ.get('PORT', 'Not set (using 8000)')}")
+    print("=" * 50)
+    print("📂 Directory Contents:")
+    for item in os.listdir("."):
+        print(f"   - {item}")
     print("=" * 50)
 
-    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True)
+    # Check for data directory
+    if os.path.exists("data"):
+        print("📁 Data Directory Contents:")
+        for item in os.listdir("data"):
+            print(f"   - {item}")
+    else:
+        print("❌ Data directory not found")
+    print("=" * 50)
+
+    uvicorn.run(app, host=host, port=port, reload=False)  # Set to False for production
