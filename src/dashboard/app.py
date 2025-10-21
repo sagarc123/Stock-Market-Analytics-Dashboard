@@ -16,7 +16,7 @@ from dash.dash_table import Format, FormatTemplate
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIG ---
-API = "http://127.0.0.1:8000"
+API = "https://stock-market-analytics-dashboard.onrender.com"
 DEFAULT_PORT = 8050
 
 # App and server initialization
