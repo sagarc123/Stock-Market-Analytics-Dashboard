@@ -1,6 +1,7 @@
 📈 Stock Market Analytics Dashboard
 ===================================
-
+Streamlit Dashboard Link : [Dashboard](https://stock-market-analytics-dashboard-urqrm7zcvsxrwnykgj7e5q.streamlit.app/)
+API Link : [API](https://stock-market-analytics-dashboard.onrender.com)
 The Stock Market Analytics Dashboard is a full-stack financial analytics platform designed to convert raw stock market data into meaningful insights. It helps investors, analysts, and portfolio managers make smarter, data-driven investment decisions with clear, interactive, and real-time visualizations.
 
 ![Dashboard 1](images/Dashboard%201.png)
