@@ -196,9 +196,12 @@ This will process the CSV data and populate the SQLite database.
 
 ### Step 3: Start FastAPI Backend
 
-`python src/api/app.py`
+`uvicorn src.api.app:app --reload --port 8000`
 
-This runs the backend API that serves data to the dashboard.
+This runs the backend API that serves data to the dashboard.\
+Access the API server at:\
+👉 [http://127.0.0.1:8000/docs#/](http://127.0.0.1:8000/docs#/)
+
 
 ### Step 4: Launch Dash Dashboard
 
